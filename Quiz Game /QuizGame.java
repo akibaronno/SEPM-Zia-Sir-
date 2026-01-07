@@ -1,109 +1,122 @@
+import javafx.application.Application;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.Stage;
+
 import java.sql.*;
 import java.util.*;
 
-public class QuizGame {
+public class QuizGameFX extends Application {
 
-    // Database configuration (encapsulated using private constants)
+    // ---------- DATABASE CONFIG ----------
     private static final String JDBC_URL =
             "jdbc:mysql://localhost:3306/word_game?serverTimezone=UTC";
     private static final String DB_USER = "root";
     private static final String DB_PASS = "Akib@akib31";
 
-    // Game state variables (encapsulation: private access)
+    // ---------- GAME STATE ----------
     private Connection conn;
-    private String playerName;
+    private String playerName = "Player";
     private WordInfo currentWord;
     private char[] hiddenWord;
-    private Set<Character> guessedLetters;
-    private int attempts, totalScore, currentWordIndex;
+    private Set<Character> guessedLetters = new HashSet<>();
+    private int attempts;
+    private int totalScore = 0;
+    private int wordCount = 0;
 
     private final int WORDS_PER_LEVEL = 5;
     private final Map<String, Set<Integer>> usedWordIdsMap = new HashMap<>();
-    private final Scanner scanner = new Scanner(System.in);
 
-    public static void main(String[] args) {
-        new QuizGame().startGame();
+    // ---------- UI CONTROLS ----------
+    private Label wordLabel = new Label();
+    private Label hintLabel = new Label();
+    private Label attemptsLabel = new Label();
+    private Label scoreLabel = new Label();
+    private TextField letterField = new TextField();
+    private Button guessButton = new Button("Guess");
+
+    private String difficulty;
+
+    @Override
+    public void start(Stage stage) {
+        connectDatabase();
+        askPlayerName(stage);
     }
 
-    // Starts the game and manages database connection
-    private void startGame() {
-        try {
-            conn = DriverManager.getConnection(JDBC_URL, DB_USER, DB_PASS);
-        } catch (SQLException e) {
-            System.out.println("Database connection failed!");
-            e.printStackTrace();
+    // ---------- PLAYER NAME ----------
+    private void askPlayerName(Stage stage) {
+        TextField nameField = new TextField();
+        ComboBox<String> difficultyBox = new ComboBox<>();
+        difficultyBox.getItems().addAll("EASY", "MEDIUM", "HARD");
+        difficultyBox.setValue("EASY");
+
+        Button startBtn = new Button("Start Game");
+
+        VBox root = new VBox(10,
+                new Label("Enter Player Name:"),
+                nameField,
+                new Label("Select Difficulty:"),
+                difficultyBox,
+                startBtn
+        );
+        root.setPadding(new Insets(20));
+
+        startBtn.setOnAction(e -> {
+            playerName = nameField.getText().isEmpty() ? "Player" : nameField.getText();
+            difficulty = difficultyBox.getValue();
+            usedWordIdsMap.put(difficulty, new HashSet<>());
+            showGameUI(stage);
+            loadNextWord();
+        });
+
+        stage.setScene(new Scene(root, 350, 250));
+        stage.setTitle("Quiz Game");
+        stage.show();
+    }
+
+    // ---------- GAME UI ----------
+    private void showGameUI(Stage stage) {
+        letterField.setMaxWidth(60);
+
+        guessButton.setOnAction(e -> processGuess());
+
+        VBox root = new VBox(12,
+                wordLabel,
+                hintLabel,
+                attemptsLabel,
+                scoreLabel,
+                new HBox(10, new Label("Letter:"), letterField, guessButton)
+        );
+        root.setPadding(new Insets(20));
+
+        stage.setScene(new Scene(root, 400, 300));
+    }
+
+    // ---------- LOAD WORD ----------
+    private void loadNextWord() {
+        if (wordCount >= WORDS_PER_LEVEL) {
+            showAlert("Level Completed",
+                    "Final Score: " + totalScore);
+            closeConnection();
             return;
         }
 
-        System.out.print("Enter your name: ");
-        playerName = scanner.nextLine().trim();
-        if (playerName.isEmpty()) playerName = "Player";
-
-        boolean playAgain;
-        do {
-            String[] difficulties = {"EASY", "MEDIUM", "HARD"};
-            for (String diff : difficulties) {
-                usedWordIdsMap.put(diff, new HashSet<>());
-            }
-
-            String difficulty = chooseDifficulty(difficulties);
-            resetLevel(difficulty);
-
-            playAgain = askPlayAgain();
-        } while (playAgain);
-
-        System.out.println("Thanks for playing, " + playerName + "!");
-        closeConnection();
-    }
-
-    // Allows player to select difficulty
-    private String chooseDifficulty(String[] difficulties) {
-        System.out.println("Select difficulty:");
-        for (int i = 0; i < difficulties.length; i++) {
-            System.out.println((i + 1) + ". " + difficulties[i]);
-        }
-
-        int choice = 0;
-        while (choice < 1 || choice > difficulties.length) {
-            System.out.print("Enter choice (1-" + difficulties.length + "): ");
-            try {
-                choice = Integer.parseInt(scanner.nextLine());
-            } catch (Exception ignored) {}
-        }
-        return difficulties[choice - 1];
-    }
-
-    // Resets score and loads words for a level
-    private void resetLevel(String difficulty) {
-        totalScore = 0;
-        currentWordIndex = 0;
-        usedWordIdsMap.get(difficulty).clear();
-
-        while (currentWordIndex < WORDS_PER_LEVEL) {
-            loadNextWord(difficulty);
-        }
-
-        System.out.println("Level completed! Total Score: " + totalScore);
-    }
-
-    // Loads a new word from database
-    private void loadNextWord(String difficulty) {
         try {
-            currentWord = getRandomWord(difficulty);
+            currentWord = getRandomWord();
         } catch (SQLException e) {
             e.printStackTrace();
-            return;
         }
 
         if (currentWord == null) {
-            System.out.println("No more new words for this difficulty!");
-            currentWordIndex = WORDS_PER_LEVEL;
+            showAlert("No Words", "No more words available.");
             return;
         }
 
         hiddenWord = new char[currentWord.word.length()];
         Arrays.fill(hiddenWord, '_');
-        guessedLetters = new HashSet<>();
+        guessedLetters.clear();
 
         attempts = switch (difficulty) {
             case "EASY" -> currentWord.word.length() + 4;
@@ -112,67 +125,84 @@ public class QuizGame {
             default -> currentWord.word.length() + 3;
         };
 
-        System.out.println("\nWord " + (currentWordIndex + 1) +
-                " / " + WORDS_PER_LEVEL);
-        System.out.println("Hint: " + currentWord.hint);
-
-        playCurrentWord(difficulty);
+        updateUI();
+        wordCount++;
     }
 
-    // Core gameplay logic
-    private void playCurrentWord(String difficulty) {
-        while (attempts > 0 && String.valueOf(hiddenWord).contains("_")) {
-            System.out.println("Word: " + String.valueOf(hiddenWord));
-            System.out.println("Attempts left: " + attempts);
-            System.out.print("Enter a letter: ");
+    // ---------- PROCESS GUESS ----------
+    private void processGuess() {
+        String input = letterField.getText().toLowerCase().trim();
+        letterField.clear();
 
-            String input = scanner.nextLine().toLowerCase().trim();
-            if (input.isEmpty()) {
-                System.out.println("Enter a valid letter.");
-                continue;
-            }
+        if (input.isEmpty()) return;
 
-            char guess = input.charAt(0);
-            if (guessedLetters.contains(guess)) {
-                System.out.println("Already guessed!");
-                continue;
-            }
-            guessedLetters.add(guess);
+        char guess = input.charAt(0);
+        if (guessedLetters.contains(guess)) return;
 
-            boolean found = false;
-            for (int i = 0; i < currentWord.word.length(); i++) {
-                if (currentWord.word.charAt(i) == guess) {
-                    hiddenWord[i] = guess;
-                    found = true;
-                }
-            }
+        guessedLetters.add(guess);
+        boolean found = false;
 
-            if (!found) attempts--;
-
-            if (String.valueOf(hiddenWord).equals(currentWord.word)) {
-                totalScore += 10;
-                System.out.println("Correct! Word: " + currentWord.word);
-                saveScore(10, difficulty);
-                break;
-            } else if (attempts <= 0) {
-                totalScore -= 5;
-                System.out.println("Failed! Word was: " + currentWord.word);
-                saveScore(-5, difficulty);
-                break;
+        for (int i = 0; i < currentWord.word.length(); i++) {
+            if (currentWord.word.charAt(i) == guess) {
+                hiddenWord[i] = guess;
+                found = true;
             }
         }
-        currentWordIndex++;
+
+        if (!found) attempts--;
+
+        if (!String.valueOf(hiddenWord).contains("_")) {
+            totalScore += 10;
+            saveScore(10);
+            loadNextWord();
+        } else if (attempts <= 0) {
+            totalScore -= 5;
+            saveScore(-5);
+            loadNextWord();
+        }
+
+        updateUI();
     }
 
-    // Asks user if they want to play again
-    private boolean askPlayAgain() {
-        System.out.print("Do you want to play again? (y/n): ");
-        String answer = scanner.nextLine().trim().toLowerCase();
-        return answer.equals("y") || answer.equals("yes");
+    // ---------- UI UPDATE ----------
+    private void updateUI() {
+        wordLabel.setText("Word: " + String.valueOf(hiddenWord));
+        hintLabel.setText("Hint: " + currentWord.hint);
+        attemptsLabel.setText("Attempts Left: " + attempts);
+        scoreLabel.setText("Score: " + totalScore);
     }
 
-    // Saves score into database
-    private void saveScore(int score, String difficulty) {
+    // ---------- DATABASE ----------
+    private void connectDatabase() {
+        try {
+            conn = DriverManager.getConnection(JDBC_URL, DB_USER, DB_PASS);
+        } catch (SQLException e) {
+            showAlert("Database Error", "Connection failed!");
+        }
+    }
+
+    private WordInfo getRandomWord() throws SQLException {
+        String sql =
+                "SELECT id, word, hint FROM words WHERE difficulty=? ORDER BY RAND()";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, difficulty);
+            ResultSet rs = ps.executeQuery();
+
+            Set<Integer> used = usedWordIdsMap.get(difficulty);
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                if (!used.contains(id)) {
+                    used.add(id);
+                    return new WordInfo(id,
+                            rs.getString("word"),
+                            rs.getString("hint"));
+                }
+            }
+        }
+        return null;
+    }
+
+    private void saveScore(int score) {
         try {
             String sql =
                     "INSERT INTO scores (player_name, score, difficulty) VALUES (?, ?, ?)";
@@ -187,40 +217,21 @@ public class QuizGame {
         }
     }
 
-    // Fetches a random unused word
-    private WordInfo getRandomWord(String difficulty) throws SQLException {
-        String sql =
-                "SELECT id, word, hint FROM words WHERE difficulty = ? ORDER BY RAND()";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, difficulty);
-            ResultSet rs = ps.executeQuery();
-
-            Set<Integer> usedWordIds = usedWordIdsMap.get(difficulty);
-            while (rs.next()) {
-                int id = rs.getInt("id");
-                if (!usedWordIds.contains(id)) {
-                    usedWordIds.add(id);
-                    return new WordInfo(
-                            id,
-                            rs.getString("word"),
-                            rs.getString("hint")
-                    );
-                }
-            }
-        }
-        return null;
-    }
-
-    // Closes database connection safely
     private void closeConnection() {
         try {
-            if (conn != null && !conn.isClosed()) conn.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
+            if (conn != null) conn.close();
+        } catch (SQLException ignored) {}
     }
 
-    // Inner class representing a word (data encapsulation)
+    // ---------- UTIL ----------
+    private void showAlert(String title, String msg) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setContentText(msg);
+        alert.showAndWait();
+    }
+
+    // ---------- INNER CLASS ----------
     static class WordInfo {
         int id;
         String word;
@@ -231,5 +242,9 @@ public class QuizGame {
             this.word = word.toLowerCase();
             this.hint = hint;
         }
+    }
+
+    public static void main(String[] args) {
+        launch(args);
     }
 }
