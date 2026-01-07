@@ -1,65 +1,169 @@
-interface BankService {
-    void withdraw(double amount);
-    void checkBalance();
-}
+package interfacetest;
 
-abstract class ATMBase implements BankService {
-
-    protected double balance;
-
-    public ATMBase(double balance) {
-        this.balance = balance;
+/**
+ *
+ * @author rpbarbat
+ */
+public class InterfaceTest
+{
+    static public interface ITest
+    {
+        public int getFirstValue();
+        public int getSecondValue();
     }
 
-    public void authenticate(int pin) {
-        if (pin == 1234) {
-            System.out.println("Authentication successful.");
-        } else {
-            System.out.println("Authentication failed.");
-            System.exit(0);
+    static abstract public class ATest implements ITest
+    {
+        int first = 0;
+
+        @Override
+        public int getFirstValue()
+        {
+            return first++;
         }
     }
 
-    public abstract void deposit(double amount);
-}
+    static public class TestImpl extends ATest
+    {
+        int second = 0;
 
-class BankATM extends ATMBase {
-
-    public BankATM(double balance) {
-        super(balance);
-    }
-
-    @Override
-    public void deposit(double amount) {
-        balance += amount;
-        System.out.println("Deposited: " + amount);
-    }
-
-    @Override
-    public void withdraw(double amount) {
-        if (amount <= balance) {
-            balance -= amount;
-            System.out.println("Withdrawn: " + amount);
-        } else {
-            System.out.println("Insufficient balance.");
+        @Override
+        public int getSecondValue()
+        {
+            return second++;
         }
     }
 
-    @Override
-    public void checkBalance() {
-        System.out.println("Current Balance: " + balance);
+    static public class Test
+    {
+        int value = 0;
+
+        public int getConcreteValue()
+        {
+            return value++;
+        }
+    }
+
+    static int loops = 1000000;
+
+    /**
+     * @param args the command line arguments
+     */
+    public static void main(String[] args)
+    {
+        // Get some various pointers to the test classes
+        // To Interface
+        ITest iTest = new TestImpl();
+
+        // To abstract base
+        ATest aTest = new TestImpl();
+
+        // To impl
+        TestImpl testImpl = new TestImpl();
+
+        // To concrete
+        Test test = new Test();
+
+        System.out.println("Method call timings - " + loops + " loops");
+
+
+        StopWatch stopWatch = new StopWatch();
+
+        // Call interface method via interface reference
+        stopWatch.start();
+
+        for (int i = 0; i < loops; i++)
+        {
+            iTest.getFirstValue();
+        }
+
+        stopWatch.stop();
+
+        System.out.println("interface method via interface reference: (nanos, millis)" + stopWatch.getElapsedNanos() + ", " + stopWatch.getElapsedMillis());
+
+
+        // Call interface method via abstract reference
+        stopWatch.start();
+
+        for (int i = 0; i < loops; i++)
+        {
+            aTest.getFirstValue();
+        }
+
+        stopWatch.stop();
+
+        System.out.println("interface method via abstract reference: (nanos, millis)" + stopWatch.getElapsedNanos() + ", " + stopWatch.getElapsedMillis());
+
+
+        // Call derived interface via derived reference
+        stopWatch.start();
+
+        for (int i = 0; i < loops; i++)
+        {
+            testImpl.getSecondValue();
+        }
+
+        stopWatch.stop();
+
+        System.out.println("interface via toplevel derived reference: (nanos, millis)" + stopWatch.getElapsedNanos() + ", " + stopWatch.getElapsedMillis());
+
+
+        // Call concrete method in concrete class
+        stopWatch.start();
+
+        for (int i = 0; i < loops; i++)
+        {
+            test.getConcreteValue();
+        }
+
+        stopWatch.stop();
+
+        System.out.println("Concrete method via concrete class reference: (nanos, millis)" + stopWatch.getElapsedNanos() + ", " + stopWatch.getElapsedMillis());
     }
 }
 
-public class Main {
 
-    public static void main(String[] args) {
+package interfacetest;
 
-        BankATM atm = new BankATM(1000);
+/**
+ *
+ * @author rpbarbat
+ */
+public class StopWatch
+{
+    private long start;
+    private long stop;
 
-        atm.authenticate(1234);
-        atm.deposit(500);
-        atm.withdraw(300);
-        atm.checkBalance();
+    public StopWatch()
+    {
+        start = 0;
+        stop = 0;
+    }
+
+    public void start()
+    {
+        stop = 0;
+        start = System.nanoTime();
+    }
+
+    public void stop()
+    {
+        stop = System.nanoTime();
+    }
+
+    public float getElapsedNanos()
+    {
+        return (stop - start);
+    }
+
+    public float getElapsedMillis()
+    {
+        return (stop - start) / 1000;
+    }
+
+    public float getElapsedSeconds()
+    {
+        return (stop - start) / 1000000000;
     }
 }
+
