@@ -1,0 +1,12 @@
+INSERT INTO words (word, hint, difficulty) VALUES
+('java', 'Popular programming language', 'EASY'),
+('array', 'Stores multiple values', 'EASY'),
+('class', 'Blueprint of an object', 'EASY'),
+
+('inheritance', 'OOP feature for reusability', 'MEDIUM'),
+('polymorphism', 'Many forms in OOP', 'MEDIUM'),
+('abstraction', 'Hides implementation details', 'MEDIUM'),
+
+('synchronization', 'Thread safety mechanism', 'HARD'),
+('serialization', 'Object to byte stream', 'HARD'),
+('multithreading', 'Multiple threads execution', 'HARD');
